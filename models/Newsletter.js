@@ -31,6 +31,18 @@ const newsletterSchema = new mongoose.Schema(
 			previewText: { type: String, trim: true },
 			markdown: { type: String },
 		},
+		// Emails sent a set number of days after each contact joins (lib/sequence.js).
+		sequence: {
+			enabled: { type: Boolean, default: false },
+			steps: [
+				{
+					delayDays: { type: Number, min: 1, max: 365, required: true },
+					subject: { type: String, trim: true },
+					previewText: { type: String, trim: true },
+					markdown: { type: String },
+				},
+			],
+		},
 		// The newsletter's own confirmation email; the built-in one goes out until it has one.
 		confirmation: {
 			subject: { type: String, trim: true },

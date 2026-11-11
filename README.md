@@ -203,6 +203,7 @@ A local MongoDB works: `docker run -d -p 27017:27017 mongo` and `MONGODB_URI=mon
 | `SES_SNS_TOPIC_ARN` | To send | SNS topic Mailcheap accepts at `/api/webhooks/ses` |
 | `QSTASH_TOKEN`, `QSTASH_CURRENT_SIGNING_KEY`, `QSTASH_NEXT_SIGNING_KEY` | To send campaigns | Background sending and scheduling |
 | `QSTASH_URL` | No | QStash region other than the default, or a local QStash dev server |
+| `CRON_SECRET` | Only without QStash, for email sequences | At least 16 characters. An hourly cron job sends it to run the sequence |
 | `SEND_RATE_PER_SECOND` | No | Emails per second, 1 to 14 (default 10). Use 6 on a free Atlas cluster. |
 | `ARCHIVE_HOSTS` | No | Archive domains, like `news.example.com=weekly,letters.example.org=monthly` |
 | `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN` | No | Shared rate limits |
@@ -249,3 +250,18 @@ There's none: issues are off and pull requests may not be reviewed. This is a on
 ## License
 
 [MIT](LICENSE). Made by [Marc Lou](https://x.com/marclou).
+
+
+## Email sequences
+
+Each newsletter can send a series of emails a set number of days after a contact joins (the day they sign up, or confirm on newsletters that ask for confirmation). Turn it on in **Newsletters → your newsletter → Email sequence**, add an email per step with its "days after signup", and save.
+
+- Every hour, Mailcheap queues each step for active contacts whose delay passed in the last 2 days, once per contact. Adding a step later doesn't email your whole list.
+- Unsubscribed, bounced and suppressed contacts are skipped. A step switched off or removed before it went out is dropped.
+- Sequence emails count in the Overview stats with the welcome emails.
+
+**Running it.** With QStash set up, saving a newsletter with the sequence on creates one hourly QStash schedule (`mailcheap-sequence`). Without QStash, set `CRON_SECRET` and add an hourly cron job on your server:
+
+```
+curl -s -X POST -H "Authorization: Bearer YOUR_CRON_SECRET" https://YOUR-APP/api/jobs/send-sequence
+```

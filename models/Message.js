@@ -12,10 +12,12 @@ export const MESSAGE_STATUSES = [
 
 const messageSchema = new mongoose.Schema(
 	{
-		kind: { type: String, enum: ["campaign", "last-chance", "welcome", "confirmation", "test"], required: true },
+		kind: { type: String, enum: ["campaign", "last-chance", "welcome", "confirmation", "sequence", "test"], required: true },
 		campaignId: { type: mongoose.Schema.Types.ObjectId, ref: "Campaign" },
 		newsletterId: { type: mongoose.Schema.Types.ObjectId, ref: "Newsletter", required: true },
 		contactId: { type: mongoose.Schema.Types.ObjectId, ref: "Contact" },
+		// Which email of the newsletter's sequence (newsletter.sequence.steps[]._id).
+		sequenceStepId: { type: mongoose.Schema.Types.ObjectId },
 		email: { type: String, required: true, lowercase: true, trim: true },
 		provider: { type: String },
 		status: { type: String, enum: MESSAGE_STATUSES, default: "queued" },
@@ -40,6 +42,11 @@ messageSchema.index(
 messageSchema.index(
 	{ campaignId: 1, contactId: 1, kind: 1 },
 	{ unique: true, partialFilterExpression: { kind: "last-chance" } }
+);
+// And each sequence email at most once per contact.
+messageSchema.index(
+	{ sequenceStepId: 1, contactId: 1 },
+	{ unique: true, partialFilterExpression: { kind: "sequence" } }
 );
 messageSchema.index({ sesMessageId: 1 }, { sparse: true });
 messageSchema.index({ kind: 1, createdAt: -1 });
