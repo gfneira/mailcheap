@@ -1,7 +1,7 @@
 "use client";
 
 import { useActionState, useDeferredValue, useEffect, useMemo, useState, useTransition } from "react";
-import { ExternalLink, FlaskConical, Loader2 } from "lucide-react";
+import { ExternalLink, FlaskConical, Loader2, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { saveNewsletter, sendWelcomeTest } from "@/app/(app)/newsletters/actions";
 import AvatarNewsletter from "@/components/AvatarNewsletter";
@@ -16,6 +16,7 @@ import { formatNumber } from "@/lib/format";
 import { KEEP_URL_PLACEHOLDER, getLastChanceContent } from "@/lib/last-chance-content";
 import { MAX_AUTHOR_BIO_LENGTH, MAX_DESCRIPTION_LENGTH } from "@/lib/newsletters";
 import { UNSUBSCRIBE_PLACEHOLDER, renderEmail } from "@/lib/render-email";
+import { SEQUENCE_CATCH_UP_DAYS, SEQUENCE_LIMITS } from "@/lib/sequence-rules";
 import { slugify } from "@/lib/slug";
 import { cn } from "@/lib/utils";
 
@@ -43,9 +44,21 @@ export default function FormNewsletter({ newsletter, verifiedDomains, isSendingE
 	const [isCleanupEnabled, setIsCleanupEnabled] = useState(savedCleanup.enabled);
 	const [cleanup, setCleanup] = useState({ issues: String(savedCleanup.issues), days: String(savedCleanup.days) });
 	const deferredWelcome = useDeferredValue(welcome);
+	const [isSequenceEnabled, setIsSequenceEnabled] = useState(Boolean(newsletter?.sequence?.enabled));
+	const [sequenceSteps, setSequenceSteps] = useState(() =>
+		(newsletter?.sequence?.steps ?? []).map((step) => ({
+			key: step._id,
+			id: step._id,
+			delayDays: String(step.delayDays ?? ""),
+			subject: step.subject ?? "",
+			previewText: step.previewText ?? "",
+			markdown: step.markdown ?? "",
+		}))
+	);
 
 	useEffect(() => {
-		if (state?.ok) toast.success("Saved");
+		if (state?.ok && state.warning) toast.warning(state.warning);
+		else if (state?.ok) toast.success("Saved");
 		if (state?.error) toast.error(state.error);
 	}, [state]);
 
@@ -100,6 +113,24 @@ export default function FormNewsletter({ newsletter, verifiedDomains, isSendingE
 			const { value } = event.target;
 			setWelcome((current) => ({ ...current, [key]: value }));
 		};
+	}
+
+	function updateStep(key, field) {
+		return (event) => {
+			const { value } = event.target;
+			setSequenceSteps((steps) => steps.map((step) => (step.key === key ? { ...step, [field]: value } : step)));
+		};
+	}
+
+	function addStep() {
+		setSequenceSteps((steps) => {
+			const lastDay = Math.max(0, ...steps.map(({ delayDays }) => Number(delayDays) || 0));
+			return [...steps, { key: `new-${Date.now()}`, id: "", delayDays: String(lastDay + 1), subject: "", previewText: "", markdown: "" }];
+		});
+	}
+
+	function removeStep(key) {
+		setSequenceSteps((steps) => steps.filter((step) => step.key !== key));
 	}
 
 	function updateCleanup(key) {
@@ -314,8 +345,79 @@ export default function FormNewsletter({ newsletter, verifiedDomains, isSendingE
 			</Section>
 
 			<Section
-				title="List cleanup"
+				title="Email sequence"
 				stagger={4}
+				action={
+					<Switch
+						name="sequenceEnabled"
+						checked={isSequenceEnabled}
+						onCheckedChange={setIsSequenceEnabled}
+						aria-label="Email sequence"
+					/>
+				}
+			>
+				<input type="hidden" name="sequenceSection" value="1" />
+				<p className="px-4 py-3 text-sm text-pretty text-muted-foreground">
+					Each email goes out a set number of days after a contact joins, once per contact. A contact gets an email
+					if it joined within {SEQUENCE_CATCH_UP_DAYS} days of that delay, so adding an email later doesn&apos;t send it
+					to your whole list. Checked every hour.
+				</p>
+				{sequenceSteps.map((step, index) => (
+					<div key={step.key} className="divide-y divide-border/60">
+						<input type="hidden" name="sequenceStepId" value={step.id} />
+						<div className="flex items-center justify-between gap-3 px-4 py-2">
+							<h3 className="text-sm font-medium">Email {index + 1}</h3>
+							<Button type="button" variant="ghost" size="sm" onClick={() => removeStep(step.key)} aria-label={`Remove email ${index + 1}`}>
+								<Trash2 />
+								Remove
+							</Button>
+						</div>
+						<Field label="Days after signup">
+							<Input
+								name="sequenceDelayDays"
+								type="number"
+								inputMode="numeric"
+								min={SEQUENCE_LIMITS.minDelayDays}
+								max={SEQUENCE_LIMITS.maxDelayDays}
+								value={step.delayDays}
+								onChange={updateStep(step.key, "delayDays")}
+								className="w-28"
+							/>
+						</Field>
+						<Field label="Subject">
+							<Input name="sequenceSubject" value={step.subject} onChange={updateStep(step.key, "subject")} />
+						</Field>
+						<Field label="Preview text">
+							<Input
+								name="sequencePreviewText"
+								value={step.previewText}
+								placeholder="Optional"
+								onChange={updateStep(step.key, "previewText")}
+							/>
+						</Field>
+						<Field label="Content" hint="Markdown">
+							<Textarea
+								name="sequenceMarkdown"
+								value={step.markdown}
+								onChange={updateStep(step.key, "markdown")}
+								className="min-h-40 font-mono text-[13px] leading-6"
+							/>
+						</Field>
+					</div>
+				))}
+				{sequenceSteps.length < SEQUENCE_LIMITS.maxSteps && (
+					<div className="px-4 py-3">
+						<Button type="button" variant="outline" size="sm" onClick={addStep}>
+							<Plus />
+							Add email
+						</Button>
+					</div>
+				)}
+			</Section>
+
+			<Section
+				title="List cleanup"
+				stagger={5}
 				action={
 					<Switch
 						name="cleanupEnabled"
@@ -374,7 +476,7 @@ export default function FormNewsletter({ newsletter, verifiedDomains, isSendingE
 
 			<Section
 				title="Public archive"
-				stagger={5}
+				stagger={6}
 				action={
 					<div className="flex items-center gap-3">
 						{newsletter?.archiveEnabled && (

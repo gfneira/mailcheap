@@ -10,6 +10,8 @@ import { isSendingEnabled } from "@/lib/config";
 import { getConfirmationProblem } from "@/lib/confirmation-content";
 import { connectDb } from "@/lib/db";
 import { MAX_AUTHOR_BIO_LENGTH, MAX_DESCRIPTION_LENGTH } from "@/lib/newsletters";
+import { ensureSequenceSchedule } from "@/lib/sequence";
+import { getSequenceProblem, parseSequenceSteps } from "@/lib/sequence-rules";
 import { sendWelcomeTestEmail } from "@/lib/sending";
 import { parseSocialLinks } from "@/lib/social";
 import Newsletter from "@/models/Newsletter";
@@ -57,6 +59,19 @@ function readNewsletter(formData) {
 			previewText: readText(formData, "welcomePreviewText"),
 			markdown: String(formData.get("welcomeMarkdown") ?? ""),
 		},
+		sequence: {
+			enabled: formData.get("sequenceEnabled") === "on",
+			steps: parseSequenceSteps(
+				{
+					ids: formData.getAll("sequenceStepId"),
+					delays: formData.getAll("sequenceDelayDays"),
+					subjects: formData.getAll("sequenceSubject"),
+					previewTexts: formData.getAll("sequencePreviewText"),
+					markdowns: formData.getAll("sequenceMarkdown"),
+				},
+				isValidObjectId
+			),
+		},
 		confirmation: {
 			subject: readText(formData, "confirmationSubject"),
 			previewText: readText(formData, "confirmationPreviewText"),
@@ -93,6 +108,8 @@ function validateNewsletter(values) {
 	if (values.welcome.enabled && (!values.welcome.subject || !values.welcome.markdown.trim())) {
 		return "Welcome email needs a subject and content";
 	}
+	const sequenceProblem = getSequenceProblem(values.sequence);
+	if (sequenceProblem) return sequenceProblem;
 	return values.requireConfirmation ? getConfirmationProblem(values.confirmation) : null;
 }
 
@@ -118,11 +135,12 @@ export async function saveNewsletter(_state, formData) {
 	const error = validateNewsletter(values);
 	if (error) return { error };
 	// A collapsed email section sends no fields, and what it had saved stays as it is.
-	const { welcome, confirmation, ...rest } = values;
+	const { welcome, confirmation, sequence, ...rest } = values;
 	const document = {
 		...rest,
 		socialLinks: values.socialLinks.links,
 		...(formData.has("welcomeSubject") && { welcome }),
+		...(formData.has("sequenceSection") && { sequence }),
 		...(formData.has("confirmationSubject") && { confirmation }),
 	};
 
@@ -136,8 +154,19 @@ export async function saveNewsletter(_state, formData) {
 		throw error;
 	}
 
+	// The hourly job that sends sequence emails is set up the first time a sequence is switched on.
+	let warning;
+	if (document.sequence?.enabled) {
+		try {
+			await ensureSequenceSchedule();
+		} catch (error) {
+			console.error("[newsletters] Sequence schedule failed:", error);
+			warning = `Saved, but the sequence schedule couldn't be set up: ${error.message}`;
+		}
+	}
+
 	revalidatePath("/newsletters");
 	revalidateArchive();
 	if (createdId) redirect(`/newsletters/${createdId}`);
-	return { ok: true, savedAt: Date.now() };
+	return { ok: true, savedAt: Date.now(), ...(warning && { warning }) };
 }
