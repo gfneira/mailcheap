@@ -265,3 +265,8 @@ Each newsletter can send a series of emails a set number of days after a contact
 ```
 curl -s -X POST -H "Authorization: Bearer YOUR_CRON_SECRET" https://YOUR-APP/api/jobs/send-sequence
 ```
+
+
+## Subscriber count API
+
+`GET /api/v1/stats?newsletter=<slug>` with `Authorization: Bearer <API key>` returns `{ "newsletter", "subscribers", "byStatus" }`: `subscribers` is the number of active contacts, `byStatus` the count per contact status. Counts only, never email addresses.
