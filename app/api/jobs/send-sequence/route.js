@@ -7,10 +7,16 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
 // Called every hour by the QStash schedule (lib/sequence.js). A thrown error (database down) is retried.
+// The error's message goes back in the response so QStash's log shows why a run failed.
 async function handleSequence() {
-	const result = await runSequenceTick();
-	console.info(`[sequence] ${JSON.stringify(result)}`);
-	return NextResponse.json(result);
+	try {
+		const result = await runSequenceTick();
+		console.info(`[sequence] ${JSON.stringify(result)}`);
+		return NextResponse.json(result);
+	} catch (error) {
+		console.error("[sequence] Run failed:", error);
+		return NextResponse.json({ error: String(error?.message ?? error).slice(0, 500), name: error?.name }, { status: 500 });
+	}
 }
 
 const qstashPost = withQStashSignature(handleSequence);
